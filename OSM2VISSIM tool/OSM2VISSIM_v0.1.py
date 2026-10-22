@@ -733,6 +733,9 @@ def Create_connectors(way_type):
                             
                             connect_pos=5
                             
+                    # Keep the connector end inside way_2, short links (<1 m) would otherwise fail
+                    connect_pos=min(connect_pos, way_2.AttValue('Length2D')-0.01)
+
                     Vissim.Net.Links.AddConnector(0,way_1.Lanes.ItemByKey(lane_connection_1), way_1.AttValue('Length2D'), way_2.Lanes.ItemByKey(lane_connection_2), connect_pos, lanes, 'LINESTRING EMPTY')
                 
                     if linkpoly_2_index!=0:
@@ -773,7 +776,10 @@ def Create_connectors(way_type):
 
                     connect_pos=Links[-1].AttValue('Length2D')-3
 
-                    Vissim.Net.Links.AddConnector(0, way_2.Lanes.ItemByKey(lane_connection_2), connect_pos, way_1.Lanes.ItemByKey(lane_connection_1), 3, lanes, 'LINESTRING EMPTY')
+                    # Keep both connector ends inside their links
+                    connect_pos=min(connect_pos, way_2.AttValue('Length2D')-0.01)
+
+                    Vissim.Net.Links.AddConnector(0, way_2.Lanes.ItemByKey(lane_connection_2), connect_pos, way_1.Lanes.ItemByKey(lane_connection_1), min(3, way_1.AttValue('Length2D')-0.01), lanes, 'LINESTRING EMPTY')
                     
                     if linkpoly_2_index!=0:
                     

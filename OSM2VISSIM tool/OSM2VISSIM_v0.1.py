@@ -48,7 +48,7 @@ f.write("<network>\n</network>")
 f.close()
 
 # Connnecting COM server
-Vissim= com.Dispatch("Vissim.Vissim")
+Vissim= com.Dispatch("Vissim.Vissim.26") # VISSIM 2026
 
 #Get Vissim version for XML file
 

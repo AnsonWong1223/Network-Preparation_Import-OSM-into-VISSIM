@@ -8,7 +8,7 @@ Created on Tue Feb  8 14:27:03 2022
 import win32com.client as com
 import os
 import math
-from osgeo import ogr
+from osgeo import ogr, osr
 import shapely.geometry as sg
 import xml.etree.ElementTree as ET
 import tkinter as tk
@@ -73,6 +73,39 @@ data_source = driver.Open(osm_file+'.osm')
 
 tree = ET.parse(osm_file+'.osm')
 root = tree.getroot()
+
+# --------Local projection---------------
+# Network coordinates are true metres in a Transverse Mercator projection centred on the OSM area,
+# so the centre of the area is (0, 0) in VISSIM. Web Mercator is only used for the background map reference point.
+bounds=root.find('bounds')
+
+if bounds is not None:
+
+    lats=[float(bounds.attrib['minlat']), float(bounds.attrib['maxlat'])]
+    lons=[float(bounds.attrib['minlon']), float(bounds.attrib['maxlon'])]
+
+else:
+
+    lats=[float(node.attrib['lat']) for node in root.iter('node')]
+    lons=[float(node.attrib['lon']) for node in root.iter('node')]
+
+center_lat=(min(lats)+max(lats))/2
+center_lon=(min(lons)+max(lons))/2
+
+wgs84=osr.SpatialReference()
+wgs84.ImportFromEPSG(4326)
+wgs84.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+
+local_tm=osr.SpatialReference()
+local_tm.ImportFromProj4('+proj=tmerc +lat_0=%.9f +lon_0=%.9f +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs' % (center_lat, center_lon))
+local_tm.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+
+web_mercator=osr.SpatialReference()
+web_mercator.ImportFromEPSG(3857)
+web_mercator.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+
+to_local=osr.CoordinateTransformation(wgs84, local_tm)
+to_web_mercator=osr.CoordinateTransformation(wgs84, web_mercator)
 
 no_turn_restrictions=[]
 only_restrictions=[]
@@ -214,12 +247,11 @@ for feature in features:
             lanes_backward=0
     
         def Convert_to_mercator(lat, lon):
-            
-            RADIUS = 6378137.0
-            lat_mer=math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)) * RADIUS
-            lon_mer=math.radians(lon) * RADIUS
-            
-            return [lon_mer, lat_mer]
+
+            # Kept the original name: now returns true metres in the local Transverse Mercator projection
+            x, y, z=to_local.TransformPoint(lon, lat)
+
+            return [x, y]
 
         for k in range(len(coords)):
             
@@ -795,4 +827,29 @@ Create_connectors(carways)
 
 print('100.0%')
 
-Vissim.SaveNetAs(os.path.join(os.getcwd(), osm_file+".inpx"))
+out_file=os.path.join(os.getcwd(), osm_file+".inpx")
+
+Vissim.SaveNetAs(out_file)
+
+# --------Reference point---------------
+# Pin the network origin (projection centre) to the same place on VISSIM's Web Mercator background map
+map_x, map_y, map_z=to_web_mercator.TransformPoint(center_lon, center_lat)
+
+out_tree=ET.parse(out_file)
+net_para=out_tree.getroot().find('netPara')
+
+for tag, x, y in (('refPointMap', map_x, map_y), ('refPointNet', 0, 0)):
+
+    ref_point=net_para.find(tag)
+
+    if ref_point is None:
+
+        ref_point=ET.SubElement(net_para, tag)
+
+    ref_point.set('x', str(x))
+    ref_point.set('y', str(y))
+
+out_tree.write(out_file, encoding='UTF-8', xml_declaration=True)
+
+# Reload so the open VISSIM window shows the network with the new reference point
+Vissim.LoadNet(out_file, False)
